@@ -1,0 +1,48 @@
+[package]
+name = "pdf-catcher"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Tangkap file PDF, lalu gabung, pisah, atau ubah ke Word."
+authors = ["Darryl Fatha"]
+
+[[bin]]
+name = "pdfcatcher"
+path = "src/main.rs"
+
+[dependencies]
+# Renderer wgpu (DirectX 12), bukan OpenGL/glow: OpenGL di laptop GPU hybrid
+# (mis. AMD + NVIDIA) dan layar refresh tinggi membuat seluruh jendela berkedip.
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "default_fonts", "accesskit"] }
+egui = "0.31"
+rfd = "0.15"
+pdfium-render = "0.8"
+docx-rs = "0.4"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png"] }
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[build-dependencies]
+resvg = "0.45"
+png = "0.17"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

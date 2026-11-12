@@ -1,0 +1,5 @@
+/target
+/dist
+/tests/fixtures/*.docx
+/tests/fixtures/gabungan*.pdf
+config.json
