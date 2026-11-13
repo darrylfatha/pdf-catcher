@@ -25,7 +25,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
                     ui.label(RichText::new("PDF Catcher").font(semibold(20.0)));
-                    ui.label(RichText::new("Tangkap PDF, lalu pilih mau diapakan.").color(MUTED).size(13.5));
+                    ui.label(RichText::new("Tangkap file, lalu pilih mau diapakan.").color(MUTED).size(13.5));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if widgets::secondary_button(ui, "⚙  Pengaturan")
@@ -44,7 +44,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .show(ctx, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 let avail = ui.available_width();
-                let w = avail.min(880.0);
+                let w = avail.min(960.0);
                 ui.horizontal(|ui| {
                     ui.add_space(((avail - w) / 2.0).max(0.0));
                     ui.vertical(|ui| {
@@ -66,7 +66,7 @@ fn content(app: &mut App, ui: &mut egui::Ui) {
         widgets::message_box(
             ui,
             widgets::Tone::Err,
-            "File pdfium.dll tidak ditemukan di folder aplikasi, jadi PDF belum bisa diproses. Pasang ulang PDF Catcher untuk memperbaikinya.",
+            "File pdfium.dll tidak ditemukan di folder aplikasi, jadi sebagian fitur PDF belum bisa diproses. Word/Excel/PowerPoint ke PDF tidak terpengaruh. Pasang ulang PDF Catcher untuk memperbaikinya.",
         );
         ui.add_space(8.0);
     }
@@ -74,11 +74,11 @@ fn content(app: &mut App, ui: &mut egui::Ui) {
     // Langkah 1
     widgets::card(ui, |ui| {
         let hint = if app.basket.is_empty() {
-            "Seret file PDF ke jendela ini, atau klik kotak di bawah."
+            "Seret PDF, Word, Excel, PowerPoint, atau JPG/PNG ke jendela ini, atau klik kotak di bawah."
         } else {
             "Bisa ditambah kapan saja. Seret ≡ untuk mengubah urutan."
         };
-        widgets::step_header(ui, 1, "Tangkap PDF", hint, true);
+        widgets::step_header(ui, 1, "Tangkap file", hint, true);
         if app.basket.is_empty() {
             catch_zone::big_zone(app, ui);
         } else {
@@ -90,7 +90,7 @@ fn content(app: &mut App, ui: &mut egui::Ui) {
     // Langkah 2
     let has_files = !app.basket.is_empty();
     widgets::card(ui, |ui| {
-        widgets::step_header(ui, 2, "Pilih aksi", "Mau diapakan PDF-nya?", has_files);
+        widgets::step_header(ui, 2, "Pilih aksi", "Mau diapakan file-nya?", has_files);
         actions::cards(app, ui);
     });
     ui.add_space(14.0);

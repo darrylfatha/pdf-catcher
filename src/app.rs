@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use pdf_catcher::core::intake::{self, FileInfo, FileStatus};
+use pdf_catcher::core::intake::{self, FileInfo, FileKind, FileStatus};
+use pdf_catcher::core::office::OfficeApp;
 use pdf_catcher::core::output;
 use pdf_catcher::core::ranges;
 use pdf_catcher::core::split::{self, SplitMode};
@@ -19,7 +20,15 @@ pub enum Action {
     Merge,
     Split,
     Convert,
+    ImagesToPdf,
+    WordToPdf,
+    ExcelToPdf,
+    PptToPdf,
 }
+
+/// Aksi dikelompokkan jadi dua baris kartu di langkah 2: dari PDF, dan ke PDF.
+pub const FROM_PDF: [Action; 3] = [Action::Merge, Action::Split, Action::Convert];
+pub const TO_PDF: [Action; 4] = [Action::ImagesToPdf, Action::WordToPdf, Action::ExcelToPdf, Action::PptToPdf];
 
 impl Action {
     pub fn title(self) -> &'static str {
@@ -27,13 +36,46 @@ impl Action {
             Action::Merge => "Gabung",
             Action::Split => "Pisah",
             Action::Convert => "Ke Word",
+            Action::ImagesToPdf => "Gambar ke PDF",
+            Action::WordToPdf => "Word ke PDF",
+            Action::ExcelToPdf => "Excel ke PDF",
+            Action::PptToPdf => "PowerPoint ke PDF",
         }
     }
+
+    /// Jenis file di keranjang yang dipakai aksi ini.
+    pub fn source_kind(self) -> FileKind {
+        match self {
+            Action::Merge | Action::Split | Action::Convert => FileKind::Pdf,
+            Action::ImagesToPdf => FileKind::Image,
+            Action::WordToPdf => FileKind::Word,
+            Action::ExcelToPdf => FileKind::Excel,
+            Action::PptToPdf => FileKind::PowerPoint,
+        }
+    }
+
+    /// `true` untuk aksi batch (Word/Excel/PowerPoint ke PDF): tiap file sumber menghasilkan
+    /// satu PDF sendiri dengan nama yang sama, jadi tidak ada satu "nama file hasil" untuk diisi.
+    pub fn is_batch(self) -> bool {
+        matches!(self, Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf)
+    }
+
+    fn office_app(self) -> Option<OfficeApp> {
+        match self {
+            Action::WordToPdf => Some(OfficeApp::Word),
+            Action::ExcelToPdf => Some(OfficeApp::Excel),
+            Action::PptToPdf => Some(OfficeApp::PowerPoint),
+            _ => None,
+        }
+    }
+
     pub fn run_label(self) -> &'static str {
         match self {
             Action::Merge => "Gabungkan sekarang",
             Action::Split => "Pisahkan sekarang",
             Action::Convert => "Ubah ke Word sekarang",
+            Action::ImagesToPdf => "Gabungkan jadi PDF sekarang",
+            Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => "Ubah ke PDF sekarang",
         }
     }
     pub fn busy_label(self) -> &'static str {
@@ -41,6 +83,10 @@ impl Action {
             Action::Merge => "Sedang menggabungkan PDF…",
             Action::Split => "Sedang memisahkan PDF…",
             Action::Convert => "Sedang mengubah PDF ke Word…",
+            Action::ImagesToPdf => "Sedang menggabungkan gambar menjadi PDF…",
+            Action::WordToPdf => "Sedang mengubah Word ke PDF (lewat Microsoft Word)…",
+            Action::ExcelToPdf => "Sedang mengubah Excel ke PDF (lewat Microsoft Excel)…",
+            Action::PptToPdf => "Sedang mengubah PowerPoint ke PDF (lewat Microsoft PowerPoint)…",
         }
     }
 }
@@ -55,6 +101,7 @@ pub enum SplitChoice {
 pub struct Item {
     pub path: PathBuf,
     pub key: String,
+    pub kind: FileKind,
     /// `None` selama file masih diperiksa.
     pub info: Option<FileInfo>,
 }
@@ -102,6 +149,7 @@ pub struct App {
     pub convert_all: bool,
     pub convert_text: String,
     pub convert_name: String,
+    pub images_name: String,
 
     /// Folder tujuan khusus untuk pekerjaan ini saja (tombol "Ganti folder").
     pub dir_override: Option<PathBuf>,
@@ -134,6 +182,7 @@ impl App {
             convert_all: true,
             convert_text: String::new(),
             convert_name: String::new(),
+            images_name: String::new(),
             dir_override: None,
             make_default: false,
             status: Status::Idle,
@@ -159,37 +208,42 @@ impl App {
         let collected = intake::collect(&paths);
         let mut added = Vec::new();
         let mut dup = 0;
-        for p in collected.pdfs {
+        for (p, kind) in collected.files {
             let key = intake::same_file_key(&p);
             if self.basket.iter().any(|i| i.key == key) {
                 dup += 1;
                 continue;
             }
-            self.basket.push(Item { path: p.clone(), key, info: None });
-            added.push(p);
+            self.basket.push(Item { path: p.clone(), key, kind, info: None });
+            added.push((p, kind));
         }
         if !added.is_empty() {
-            self.toast(Tone::Ok, format!("{} PDF tertangkap", added.len()));
+            self.toast(Tone::Ok, format!("{} file tertangkap", added.len()));
             self.engine.inspect(added);
             if matches!(self.status, Status::Done { .. } | Status::Failed(_) | Status::Cancelled) {
                 self.status = Status::Idle;
             }
         }
         if collected.skipped > 0 {
-            self.toast(Tone::Warn, format!("{} file dilewati karena bukan PDF", collected.skipped));
+            self.toast(Tone::Warn, format!("{} file dilewati, jenisnya tidak dikenali", collected.skipped));
         }
         if dup > 0 {
             self.toast(Tone::Info, format!("{dup} file sudah ada di keranjang"));
         }
         if self.basket.is_empty() && collected.skipped == 0 && dup == 0 {
-            self.toast(Tone::Warn, "Tidak ada file PDF yang ditemukan");
+            self.toast(Tone::Warn, "Tidak ada file yang dikenali PDF Catcher");
         }
     }
 
     pub fn pick_files(&mut self) {
         if let Some(files) = rfd::FileDialog::new()
-            .set_title("Pilih file PDF")
-            .add_filter("File PDF", &["pdf", "PDF"])
+            .set_title("Pilih file")
+            .add_filter("Semua yang didukung", &["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "jpg", "jpeg", "png"])
+            .add_filter("PDF", &["pdf"])
+            .add_filter("Word", &["doc", "docx"])
+            .add_filter("Excel", &["xls", "xlsx"])
+            .add_filter("PowerPoint", &["ppt", "pptx"])
+            .add_filter("Gambar", &["jpg", "jpeg", "png"])
             .pick_files()
         {
             self.catch(files);
@@ -204,6 +258,7 @@ impl App {
         self.merge_name.clear();
         self.split_prefix.clear();
         self.convert_name.clear();
+        self.images_name.clear();
         self.split_text.clear();
         self.convert_text.clear();
         if !self.is_running() {
@@ -211,8 +266,8 @@ impl App {
         }
     }
 
-    pub fn ready_items(&self) -> Vec<&Item> {
-        self.basket.iter().filter(|i| i.is_ready()).collect()
+    pub fn ready_items_of(&self, kind: FileKind) -> Vec<&Item> {
+        self.basket.iter().filter(|i| i.kind == kind && i.is_ready()).collect()
     }
 
     pub fn inspecting(&self) -> bool {
@@ -274,17 +329,23 @@ impl App {
 
     /// `Ok(())` jika aksi bisa dipilih, atau alasan singkat jika tidak.
     pub fn availability(&self, a: Action) -> Result<(), &'static str> {
-        let ready = self.ready_items().len();
+        let n = self.ready_items_of(a.source_kind()).len();
         match a {
-            Action::Merge if ready < 2 => Err("Butuh minimal 2 PDF di keranjang"),
-            Action::Split | Action::Convert if ready == 0 => Err("Tangkap 1 PDF dulu"),
-            Action::Split | Action::Convert if ready > 1 => Err("Hanya untuk 1 PDF. Keluarkan PDF lainnya dari keranjang"),
+            Action::Merge if n < 2 => Err("Butuh minimal 2 PDF di keranjang"),
+            Action::Split | Action::Convert if n == 0 => Err("Tangkap 1 PDF dulu"),
+            Action::Split | Action::Convert if n > 1 => Err("Hanya untuk 1 PDF. Keluarkan PDF lainnya dari keranjang"),
+            Action::ImagesToPdf if n == 0 => Err("Tangkap gambar (JPG/PNG) dulu"),
+            Action::WordToPdf if n == 0 => Err("Tangkap file Word dulu"),
+            Action::ExcelToPdf if n == 0 => Err("Tangkap file Excel dulu"),
+            Action::PptToPdf if n == 0 => Err("Tangkap file PowerPoint dulu"),
             _ => Ok(()),
         }
     }
 
+    /// Satu-satunya item siap dari jenis yang diminta aksi saat ini, kalau memang hanya ada satu.
     pub fn single(&self) -> Option<&FileInfo> {
-        let ready = self.ready_items();
+        let a = self.action?;
+        let ready = self.ready_items_of(a.source_kind());
         if ready.len() == 1 {
             ready[0].info.as_ref()
         } else {
@@ -329,27 +390,33 @@ impl App {
 
     /// Alasan tombol utama belum bisa ditekan, atau `None` jika siap.
     pub fn blocker(&self) -> Option<String> {
-        if self.engine_missing {
-            return Some("pdfium.dll tidak ditemukan".into());
+        let a = self.action?;
+        match a.office_app() {
+            // Word/Excel/PowerPoint ke PDF tidak memakai Pdfium, tapi butuh Office terpasang.
+            Some(office) if !pdf_catcher::core::office::is_installed(office) => {
+                return Some(format!("{} tidak ditemukan di komputer ini", office.display_name()));
+            }
+            None if self.engine_missing => return Some("pdfium.dll tidak ditemukan".into()),
+            _ => {}
         }
         if self.inspecting() {
             return Some("Tunggu sebentar, file sedang diperiksa".into());
         }
-        let a = self.action?;
         if let Err(why) = self.availability(a) {
             return Some(why.into());
         }
         match a {
             Action::Split => self.split_mode().err(),
             Action::Convert => self.convert_pages().err(),
-            Action::Merge => None,
+            _ => None,
         }
     }
 
     // ---------- folder hasil ----------
 
     pub fn source_dir(&self) -> Option<PathBuf> {
-        self.ready_items().first().and_then(|i| i.path.parent().map(|p| p.to_path_buf()))
+        let a = self.action?;
+        self.ready_items_of(a.source_kind()).first().and_then(|i| i.path.parent().map(|p| p.to_path_buf()))
     }
 
     /// Folder tujuan yang akan dipakai. `None` berarti akan ditanyakan saat menyimpan.
@@ -373,19 +440,24 @@ impl App {
     pub fn default_name(&self, a: Action) -> String {
         match a {
             Action::Merge => "gabungan".into(),
+            Action::ImagesToPdf => "gambar-gabungan".into(),
             Action::Split | Action::Convert => self
-                .ready_items()
+                .ready_items_of(a.source_kind())
                 .first()
                 .map(|i| output::stem_of(&i.path))
                 .unwrap_or_else(|| "hasil".into()),
+            Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => String::new(), // tidak dipakai (batch)
         }
     }
 
-    pub fn name_field(&mut self, a: Action) -> &mut String {
+    /// `None` untuk aksi batch (Word/Excel/PowerPoint ke PDF), yang tidak punya satu nama hasil.
+    pub fn name_field(&mut self, a: Action) -> Option<&mut String> {
         match a {
-            Action::Merge => &mut self.merge_name,
-            Action::Split => &mut self.split_prefix,
-            Action::Convert => &mut self.convert_name,
+            Action::Merge => Some(&mut self.merge_name),
+            Action::Split => Some(&mut self.split_prefix),
+            Action::Convert => Some(&mut self.convert_name),
+            Action::ImagesToPdf => Some(&mut self.images_name),
+            Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => None,
         }
     }
 
@@ -397,7 +469,10 @@ impl App {
             return;
         }
         let default = self.default_name(action);
-        let mut name = output::sanitize_stem(self.name_field(action).as_str(), &default);
+        let mut name = self
+            .name_field(action)
+            .map(|f| output::sanitize_stem(f.as_str(), &default))
+            .unwrap_or_default();
 
         let dir = match self.target_dir() {
             Some(d) => d,
@@ -405,17 +480,19 @@ impl App {
                 // Mode "Tanya setiap kali".
                 let start_dir = self.source_dir().unwrap_or_default();
                 match action {
-                    Action::Split => match rfd::FileDialog::new()
-                        .set_title("Pilih folder untuk menyimpan hasil")
-                        .set_directory(&start_dir)
-                        .pick_folder()
-                    {
-                        Some(d) => d,
-                        None => return,
-                    },
-                    Action::Merge | Action::Convert => {
-                        let ext = if action == Action::Merge { "pdf" } else { "docx" };
-                        let label = if action == Action::Merge { "File PDF" } else { "Dokumen Word" };
+                    Action::Split | Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => {
+                        match rfd::FileDialog::new()
+                            .set_title("Pilih folder untuk menyimpan hasil")
+                            .set_directory(&start_dir)
+                            .pick_folder()
+                        {
+                            Some(d) => d,
+                            None => return,
+                        }
+                    }
+                    Action::Merge | Action::Convert | Action::ImagesToPdf => {
+                        let ext = if action == Action::Convert { "docx" } else { "pdf" };
+                        let label = if action == Action::Convert { "Dokumen Word" } else { "File PDF" };
                         match rfd::FileDialog::new()
                             .set_title("Simpan hasil sebagai")
                             .set_directory(&start_dir)
@@ -450,7 +527,7 @@ impl App {
             self.toast(Tone::Ok, "Folder ini sekarang jadi tujuan default");
         }
 
-        let ready: Vec<PathBuf> = self.ready_items().iter().map(|i| i.path.clone()).collect();
+        let ready: Vec<PathBuf> = self.ready_items_of(action.source_kind()).iter().map(|i| i.path.clone()).collect();
         let job = match action {
             Action::Merge => Job::Merge { inputs: ready, out_dir: dir, name },
             Action::Split => match self.split_mode() {
@@ -461,6 +538,11 @@ impl App {
                 Ok(pages) => Job::Convert { input: ready[0].clone(), pages, out_dir: dir, name },
                 Err(_) => return,
             },
+            Action::ImagesToPdf => Job::ImagesToPdf { inputs: ready, out_dir: dir, name },
+            Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => {
+                let Some(office) = action.office_app() else { return };
+                Job::OfficeToPdf { app: office, inputs: ready, out_dir: dir }
+            }
         };
         self.status = Status::Running { action, done: 0, total: 1 };
         self.engine.run(job);

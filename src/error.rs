@@ -29,6 +29,15 @@ pub enum AppError {
 
     #[error("Proses dibatalkan.")]
     Cancelled,
+
+    #[error("{0} tidak ditemukan di komputer ini. Pasang Microsoft Office untuk memakai fitur ini.")]
+    OfficeMissing(&'static str),
+
+    #[error("{0}")]
+    OfficeFailed(String),
+
+    #[error("File \"{name}\" tidak dapat dibaca sebagai gambar: {detail}", name = file_name(.0), detail = .1)]
+    NotImage(PathBuf, String),
 }
 
 pub fn file_name(p: &Path) -> String {

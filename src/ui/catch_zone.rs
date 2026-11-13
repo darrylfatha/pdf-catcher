@@ -19,9 +19,9 @@ pub fn big_zone(app: &mut App, ui: &mut egui::Ui) {
     p.rect_filled(rect, 14.0, if hovered { ACCENT_SOFT } else { Color32::from_rgb(0xFA, 0xFA, 0xFB) });
     dashed_rect(p, rect.shrink(1.0), Stroke::new(2.0_f32, if hovered { ACCENT } else { DISABLED }));
 
-    // ikon: lembar PDF jatuh ke lengkung "tangkap"
+    // ikon: lembar file jatuh ke lengkung "tangkap"
     let c = rect.center() - vec2(0.0, 42.0);
-    widgets::paint_page(ui, egui::Rect::from_center_size(c, vec2(44.0, 56.0)), ACCENT, "PDF");
+    widgets::paint_page(ui, egui::Rect::from_center_size(c, vec2(44.0, 56.0)), ACCENT, "");
     let arc: Vec<egui::Pos2> = (0..=20)
         .map(|i| {
             let t = i as f32 / 20.0 * std::f32::consts::PI;
@@ -30,15 +30,15 @@ pub fn big_zone(app: &mut App, ui: &mut egui::Ui) {
         .collect();
     p.add(Shape::line(arc, Stroke::new(4.0_f32, Color32::from_rgb(0xF2, 0xB6, 0x1F))));
 
-    p.text(rect.center() + vec2(0.0, 38.0), Align2::CENTER_CENTER, "Seret file PDF ke sini", theme::semibold(21.0), TEXT);
+    p.text(rect.center() + vec2(0.0, 38.0), Align2::CENTER_CENTER, "Seret file ke sini", theme::semibold(21.0), TEXT);
     p.text(
         rect.center() + vec2(0.0, 66.0),
         Align2::CENTER_CENTER,
-        "atau klik di sini untuk memilih file   •   bisa juga satu folder sekaligus",
+        "PDF, Word, Excel, PowerPoint, atau JPG/PNG — atau klik untuk memilih, bisa juga satu folder",
         egui::FontId::proportional(14.5),
         MUTED,
     );
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Klik untuk memilih file PDF (Ctrl+O)");
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Klik untuk memilih file (Ctrl+O)");
     if resp.clicked() {
         app.pick_files();
     }

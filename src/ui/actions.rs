@@ -1,17 +1,21 @@
-//! Langkah 2 (kartu aksi) dan langkah 3 (opsi, simpan, proses, hasil).
+//! Langkah 2 (kartu aksi, dua baris: dari PDF & ke PDF) dan langkah 3 (opsi, simpan, proses, hasil).
 
 use egui::{pos2, vec2, Align2, Color32, Rect, RichText, Sense, Stroke};
 
+use super::save_to;
 use super::theme::{self, *};
 use super::widgets::{self, Tone};
-use super::save_to;
-use crate::app::{Action, App, SplitChoice, Status};
+use crate::app::{Action, App, SplitChoice, Status, FROM_PDF, TO_PDF};
 
 const WORD_BLUE: Color32 = Color32::from_rgb(0x2B, 0x57, 0x9A);
+const EXCEL_GREEN: Color32 = Color32::from_rgb(0x1D, 0x6F, 0x42);
+const PPT_ORANGE: Color32 = Color32::from_rgb(0xC4, 0x3E, 0x1C);
+const IMAGE_PURPLE: Color32 = Color32::from_rgb(0x6B, 0x4B, 0xC9);
 
 fn paint_icon(ui: &egui::Ui, a: Action, rect: Rect, enabled: bool) {
     let red = if enabled { ACCENT } else { DISABLED };
     let o = rect.left_top();
+    let accent_of = |c: Color32| if enabled { c } else { DISABLED };
     match a {
         Action::Merge => {
             widgets::paint_page(ui, Rect::from_min_size(o + vec2(2.0, 2.0), vec2(26.0, 34.0)), red.gamma_multiply(0.55), "");
@@ -23,9 +27,29 @@ fn paint_icon(ui: &egui::Ui, a: Action, rect: Rect, enabled: bool) {
             widgets::paint_page(ui, Rect::from_min_size(o + vec2(34.0, 28.0), vec2(16.0, 21.0)), red.gamma_multiply(0.75), "");
         }
         Action::Convert => {
-            let blue = if enabled { WORD_BLUE } else { DISABLED };
+            let blue = accent_of(WORD_BLUE);
             widgets::paint_page(ui, Rect::from_min_size(o + vec2(0.0, 6.0), vec2(26.0, 34.0)), red.gamma_multiply(0.6), "");
             widgets::paint_page(ui, Rect::from_min_size(o + vec2(18.0, 12.0), vec2(30.0, 38.0)), blue, "W");
+        }
+        Action::ImagesToPdf => {
+            let purple = accent_of(IMAGE_PURPLE);
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(2.0, 2.0), vec2(26.0, 34.0)), purple.gamma_multiply(0.55), "");
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(20.0, 14.0), vec2(28.0, 36.0)), red, "PDF");
+        }
+        Action::WordToPdf => {
+            let blue = accent_of(WORD_BLUE);
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(0.0, 6.0), vec2(26.0, 34.0)), blue, "W");
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(18.0, 12.0), vec2(30.0, 38.0)), red, "PDF");
+        }
+        Action::ExcelToPdf => {
+            let green = accent_of(EXCEL_GREEN);
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(0.0, 6.0), vec2(26.0, 34.0)), green, "X");
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(18.0, 12.0), vec2(30.0, 38.0)), red, "PDF");
+        }
+        Action::PptToPdf => {
+            let orange = accent_of(PPT_ORANGE);
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(0.0, 6.0), vec2(26.0, 34.0)), orange, "P");
+            widgets::paint_page(ui, Rect::from_min_size(o + vec2(18.0, 12.0), vec2(30.0, 38.0)), red, "PDF");
         }
     }
 }
@@ -35,10 +59,77 @@ fn description(a: Action) -> &'static str {
         Action::Merge => "Satukan beberapa PDF menjadi satu file.",
         Action::Split => "Pecah satu PDF menjadi beberapa file.",
         Action::Convert => "Ubah PDF menjadi dokumen Word yang bisa diedit.",
+        Action::ImagesToPdf => "Satukan beberapa JPG/PNG menjadi satu PDF.",
+        Action::WordToPdf => "Ubah dokumen Word menjadi PDF (lewat Microsoft Word).",
+        Action::ExcelToPdf => "Ubah spreadsheet Excel menjadi PDF (lewat Microsoft Excel).",
+        Action::PptToPdf => "Ubah presentasi PowerPoint menjadi PDF (lewat Microsoft PowerPoint).",
     }
 }
 
-/// Tiga kartu aksi besar yang bisa diklik.
+fn card(app: &mut App, ui: &mut egui::Ui, a: Action, w: f32, h: f32, running: bool) {
+    let avail = if app.basket.is_empty() { Err("Tangkap file dulu di langkah 1") } else { app.availability(a) };
+    let enabled = avail.is_ok() && !running;
+    let selected = app.action == Some(a);
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h), if enabled { Sense::click() } else { Sense::hover() });
+    let hovered = enabled && resp.hovered();
+
+    let (fill, stroke) = if selected {
+        (ACCENT_SOFT, Stroke::new(2.5_f32, ACCENT))
+    } else if hovered {
+        (Color32::from_rgb(0xFF, 0xF8, 0xF7), Stroke::new(1.5_f32, Color32::from_rgb(0xEC, 0x9C, 0x96)))
+    } else if enabled {
+        (CARD, Stroke::new(1.0_f32, BORDER))
+    } else {
+        (Color32::from_rgb(0xF4, 0xF4, 0xF6), Stroke::new(1.0_f32, BORDER))
+    };
+    let p = ui.painter();
+    p.rect_filled(rect, 14.0, fill);
+    p.rect_stroke(rect, 14.0, stroke, egui::StrokeKind::Inside);
+
+    let icon = Rect::from_min_size(rect.left_top() + vec2(14.0, 12.0), vec2(46.0, 46.0));
+    paint_icon(ui, a, icon, enabled);
+    if selected {
+        let c = pos2(rect.right() - 18.0, rect.top() + 18.0);
+        p.circle_filled(c, 10.0, ACCENT);
+        p.text(c, Align2::CENTER_CENTER, "✔", egui::FontId::proportional(12.0), Color32::WHITE);
+    }
+
+    let text_color = if enabled { TEXT } else { DISABLED };
+    p.text(rect.left_top() + vec2(14.0, 64.0), Align2::LEFT_TOP, a.title(), theme::semibold(17.0), text_color);
+    let (sub, sub_color) = match avail {
+        Ok(()) => (description(a), MUTED),
+        Err(why) => (why, if app.basket.is_empty() { DISABLED } else { WARN }),
+    };
+    let galley = ui.painter().layout(sub.to_string(), egui::FontId::proportional(13.0), sub_color, w - 28.0);
+    ui.painter().galley(rect.left_top() + vec2(14.0, 88.0), galley, sub_color);
+
+    let resp = if enabled {
+        resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(description(a))
+    } else {
+        resp
+    };
+    if resp.clicked() {
+        app.action = Some(a);
+        if matches!(app.status, Status::Done { .. } | Status::Failed(_) | Status::Cancelled) {
+            app.status = Status::Idle;
+        }
+    }
+}
+
+fn row(app: &mut App, ui: &mut egui::Ui, actions: &[Action], running: bool) {
+    let n = actions.len() as f32;
+    let gap = 10.0;
+    let w = ((ui.available_width() - (n - 1.0) * gap) / n).max(140.0);
+    let h = 132.0;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for &a in actions {
+            card(app, ui, a, w, h, running);
+        }
+    });
+}
+
+/// Kartu aksi, dalam dua baris: "Dari PDF" dan "Ke PDF".
 pub fn cards(app: &mut App, ui: &mut egui::Ui) {
     let running = app.is_running();
     // Pilihan yang tidak lagi cocok dengan isi keranjang dilepas.
@@ -48,61 +139,13 @@ pub fn cards(app: &mut App, ui: &mut egui::Ui) {
         }
     }
 
-    let gap = 12.0;
-    let w = ((ui.available_width() - 2.0 * gap) / 3.0).max(150.0);
-    let h = 150.0;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = gap;
-        for a in [Action::Merge, Action::Split, Action::Convert] {
-            let avail = if app.basket.is_empty() { Err("Tangkap PDF dulu di langkah 1") } else { app.availability(a) };
-            let enabled = avail.is_ok() && !running && !app.engine_missing;
-            let selected = app.action == Some(a);
-            let (rect, resp) = ui.allocate_exact_size(vec2(w, h), if enabled { Sense::click() } else { Sense::hover() });
-            let hovered = enabled && resp.hovered();
-
-            let (fill, stroke) = if selected {
-                (ACCENT_SOFT, Stroke::new(2.5_f32, ACCENT))
-            } else if hovered {
-                (Color32::from_rgb(0xFF, 0xF8, 0xF7), Stroke::new(1.5_f32, Color32::from_rgb(0xEC, 0x9C, 0x96)))
-            } else if enabled {
-                (CARD, Stroke::new(1.0_f32, BORDER))
-            } else {
-                (Color32::from_rgb(0xF4, 0xF4, 0xF6), Stroke::new(1.0_f32, BORDER))
-            };
-            let p = ui.painter();
-            p.rect_filled(rect, 14.0, fill);
-            p.rect_stroke(rect, 14.0, stroke, egui::StrokeKind::Inside);
-
-            let icon = Rect::from_min_size(rect.left_top() + vec2(16.0, 14.0), vec2(52.0, 52.0));
-            paint_icon(ui, a, icon, enabled);
-            if selected {
-                let c = pos2(rect.right() - 20.0, rect.top() + 20.0);
-                p.circle_filled(c, 11.0, ACCENT);
-                p.text(c, Align2::CENTER_CENTER, "✔", egui::FontId::proportional(13.0), Color32::WHITE);
-            }
-
-            let text_color = if enabled { TEXT } else { DISABLED };
-            p.text(rect.left_top() + vec2(16.0, 76.0), Align2::LEFT_TOP, a.title(), theme::semibold(19.0), text_color);
-            let (sub, sub_color) = match avail {
-                Ok(()) => (description(a), MUTED),
-                Err(why) => (why, if app.basket.is_empty() { DISABLED } else { WARN }),
-            };
-            let galley = ui.painter().layout(sub.to_string(), egui::FontId::proportional(13.5), sub_color, w - 32.0);
-            ui.painter().galley(rect.left_top() + vec2(16.0, 104.0), galley, sub_color);
-
-            let resp = if enabled {
-                resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(description(a))
-            } else {
-                resp
-            };
-            if resp.clicked() {
-                app.action = Some(a);
-                if matches!(app.status, Status::Done { .. } | Status::Failed(_) | Status::Cancelled) {
-                    app.status = Status::Idle;
-                }
-            }
-        }
-    });
+    ui.label(RichText::new("Dari PDF").color(MUTED).size(13.0));
+    ui.add_space(4.0);
+    row(app, ui, &FROM_PDF, running);
+    ui.add_space(12.0);
+    ui.label(RichText::new("Ke PDF").color(MUTED).size(13.0));
+    ui.add_space(4.0);
+    row(app, ui, &TO_PDF, running);
 }
 
 /// Isi langkah 3: tergantung status (atur, sedang proses, selesai, gagal).
@@ -153,7 +196,7 @@ pub fn panel(app: &mut App, ui: &mut egui::Ui) {
                     }
                 }
                 if widgets::secondary_button(ui, "Proses lagi")
-                    .on_hover_text(format!("Kembali ke pengaturan {} dengan PDF yang sama", action.title()))
+                    .on_hover_text(format!("Kembali ke pengaturan {} dengan file yang sama", action.title()))
                     .clicked()
                 {
                     app.status = Status::Idle;
@@ -219,7 +262,7 @@ fn range_feedback(ui: &mut egui::Ui, result: Result<String, String>) {
 fn options(app: &mut App, ui: &mut egui::Ui, a: Action) {
     match a {
         Action::Merge => {
-            let n = app.ready_items().len();
+            let n = app.ready_items_of(a.source_kind()).len();
             widgets::message_box(
                 ui,
                 Tone::Info,
@@ -292,6 +335,35 @@ fn options(app: &mut App, ui: &mut egui::Ui, a: Action) {
                 RichText::new("Hasil paling rapi untuk dokumen satu kolom seperti surat, laporan, dan kontrak.")
                     .color(MUTED)
                     .size(13.5),
+            );
+        }
+        Action::ImagesToPdf => {
+            let n = app.ready_items_of(a.source_kind()).len();
+            widgets::message_box(
+                ui,
+                Tone::Info,
+                &format!("{n} gambar akan disatukan menjadi satu PDF, satu gambar per halaman, sesuai urutan di keranjang."),
+            );
+        }
+        Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => {
+            let n = app.ready_items_of(a.source_kind()).len();
+            let app_name = match a {
+                Action::WordToPdf => "Microsoft Word",
+                Action::ExcelToPdf => "Microsoft Excel",
+                Action::PptToPdf => "Microsoft PowerPoint",
+                _ => unreachable!(),
+            };
+            let info = if n == 1 {
+                format!("1 file akan diubah menjadi PDF lewat {app_name}, dengan nama yang sama.")
+            } else {
+                format!("{n} file akan diubah menjadi {n} PDF terpisah lewat {app_name}, masing-masing dengan nama yang sama seperti file aslinya.")
+            };
+            widgets::message_box(ui, Tone::Info, &info);
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(format!("Membutuhkan {app_name} terpasang di komputer ini. Akan berjalan sebentar di latar belakang, tidak terlihat."))
+                    .color(MUTED)
+                    .size(13.0),
             );
         }
     }

@@ -1,9 +1,9 @@
 [package]
 name = "pdf-catcher"
-version = "0.1.0"
+version = "1.1.0"
 edition = "2021"
 license = "MIT"
-description = "Tangkap file PDF, lalu gabung, pisah, atau ubah ke Word."
+description = "Tangkap file PDF/Word/Excel/PowerPoint/gambar, lalu gabung, pisah, atau ubah ke/dari PDF."
 authors = ["Darryl Fatha"]
 
 [[bin]]
@@ -21,7 +21,7 @@ docx-rs = "0.4"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -29,6 +29,14 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_IO",
     "Win32_System_Pipes",
     "Win32_System_Threading",
+] }
+# Hanya untuk otomasi Word/Excel/PowerPoint (IDispatch) di office_com.rs: windows-sys
+# tidak menyediakan pembungkus pemanggilan antarmuka COM, jadi dipakai di sini saja.
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_System_Variant",
+    "Win32_System_Ole",
 ] }
 
 [build-dependencies]

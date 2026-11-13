@@ -1,9 +1,11 @@
 //! Logika inti PDF Catcher. Tidak tahu apa-apa soal UI.
 
 pub mod convert;
+pub mod images;
 pub mod intake;
 pub mod layout;
 pub mod merge;
+pub mod office;
 pub mod output;
 pub mod ranges;
 pub mod split;

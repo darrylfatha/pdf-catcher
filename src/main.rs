@@ -27,8 +27,8 @@ fn main() -> eframe::Result<()> {
     let icon = image_icon();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("PDF Catcher")
-        .with_inner_size([980.0, 720.0])
-        .with_min_inner_size([760.0, 560.0])
+        .with_inner_size([1060.0, 800.0])
+        .with_min_inner_size([780.0, 600.0])
         .with_drag_and_drop(true);
     if let Some(icon) = icon {
         viewport = viewport.with_icon(icon);

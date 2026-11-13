@@ -7,7 +7,7 @@
 ; Build: jalankan ..\build-installer.ps1 (build exe release dulu, lalu kompilasi skrip ini).
 
 #define AppName "PDF Catcher"
-#define AppVersion "0.1.0"
+#define AppVersion "1.1.0"
 #define AppExe "pdfcatcher.exe"
 
 [Setup]

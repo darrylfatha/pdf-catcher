@@ -59,14 +59,14 @@ fn skenario_pdfium() {
     let mut cb = |d, t| last.set((d, t));
 
     // Pemeriksaan file
-    let info = intake::inspect(&pdfium, &b);
+    let info = intake::inspect(Some(&pdfium), &b, intake::FileKind::Pdf);
     assert_eq!(info.status, intake::FileStatus::Ready);
     assert_eq!(info.pages, 10);
     assert!(info.has_text);
-    assert!(!intake::inspect(&pdfium, &scan).has_text);
+    assert!(!intake::inspect(Some(&pdfium), &scan, intake::FileKind::Pdf).has_text);
     let junk = dir.join("rusak.pdf");
     std::fs::write(&junk, b"%PDF-1.7 bukan pdf sungguhan").unwrap();
-    assert_eq!(intake::inspect(&pdfium, &junk).status, intake::FileStatus::Broken);
+    assert_eq!(intake::inspect(Some(&pdfium), &junk, intake::FileKind::Pdf).status, intake::FileStatus::Broken);
 
     // Gabung: 1 + 10 + 1 halaman
     {

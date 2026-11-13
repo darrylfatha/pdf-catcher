@@ -1,4 +1,5 @@
-//! Baris "Simpan ke": folder tujuan + nama file hasil.
+//! Baris "Simpan ke": folder tujuan + nama file hasil (kecuali aksi batch, yang memakai
+//! nama file sumbernya masing-masing).
 
 use egui::RichText;
 
@@ -8,24 +9,35 @@ use crate::app::{Action, App};
 use pdf_catcher::settings::OutputMode;
 
 pub fn row(app: &mut App, ui: &mut egui::Ui, a: Action) {
-    // Nama file
-    let default = app.default_name(a);
-    let (label, ext) = match a {
-        Action::Merge => ("Nama file hasil:", ".pdf"),
-        Action::Split => ("Awalan nama file:", "_p1.pdf, …"),
-        Action::Convert => ("Nama file hasil:", ".docx"),
-    };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(15.5));
-        ui.add(egui::TextEdit::singleline(app.name_field(a)).hint_text(default).desired_width(260.0));
-        ui.label(RichText::new(ext).color(MUTED));
-    });
-    ui.label(
-        RichText::new("Jika nama sudah dipakai, otomatis ditambah (1), (2), dan seterusnya. File asli tidak pernah ditimpa.")
-            .color(MUTED)
-            .size(13.0),
-    );
-    ui.add_space(6.0);
+    if a.is_batch() {
+        ui.label(
+            RichText::new("Setiap file akan menghasilkan satu PDF dengan nama yang sama (otomatis ditambah (1), (2) jika sudah ada).")
+                .color(MUTED)
+                .size(13.5),
+        );
+        ui.add_space(6.0);
+    } else {
+        let default = app.default_name(a);
+        let (label, ext) = match a {
+            Action::Merge | Action::ImagesToPdf => ("Nama file hasil:", ".pdf"),
+            Action::Split => ("Awalan nama file:", "_p1.pdf, …"),
+            Action::Convert => ("Nama file hasil:", ".docx"),
+            Action::WordToPdf | Action::ExcelToPdf | Action::PptToPdf => unreachable!("aksi batch ditangani di atas"),
+        };
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(label).size(15.5));
+            if let Some(field) = app.name_field(a) {
+                ui.add(egui::TextEdit::singleline(field).hint_text(default).desired_width(260.0));
+            }
+            ui.label(RichText::new(ext).color(MUTED));
+        });
+        ui.label(
+            RichText::new("Jika nama sudah dipakai, otomatis ditambah (1), (2), dan seterusnya. File asli tidak pernah ditimpa.")
+                .color(MUTED)
+                .size(13.0),
+        );
+        ui.add_space(6.0);
+    }
 
     // Folder tujuan
     let target = app.target_dir();
@@ -60,7 +72,7 @@ pub fn row(app: &mut App, ui: &mut egui::Ui, a: Action) {
 
     let source_note = match (app.dir_override.is_some(), app.settings.output_mode) {
         (true, _) => None,
-        (false, OutputMode::SameAsSource) => Some("Sama dengan folder file PDF asli (bisa diubah di Pengaturan)."),
+        (false, OutputMode::SameAsSource) => Some("Sama dengan folder file asli (bisa diubah di Pengaturan)."),
         (false, OutputMode::Custom) => Some("Folder default dari Pengaturan."),
         (false, OutputMode::Ask) => Some("Pengaturan: tanya setiap kali menyimpan."),
     };
